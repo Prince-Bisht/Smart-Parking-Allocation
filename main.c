@@ -364,12 +364,43 @@ static const Color CARD = {25, 38, 58, 255};
 static const Color TEAL = {47, 207, 157, 255};
 static const Color MUTED = {170, 184, 204, 255};
 
+/* Font-only update: preserve the existing GUI and all algorithm calls. */
+static Font modernFont;
+static int modernFontLoaded = 0;
+
+static void drawModernText(const char *text, int x, int y, int size, Color color) {
+    if (modernFontLoaded) {
+        DrawTextEx(modernFont, text, (Vector2){(float)x, (float)y},
+                   (float)size, 1.0f, color);
+    } else {
+        DrawText(text, x, y, size, color);
+    }
+}
+
+static void loadModernFont(void) {
+    const char *paths[] = {
+        "assets/font.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "C:/Windows/Fonts/segoeui.ttf"
+    };
+    for (size_t i = 0; i < sizeof(paths)/sizeof(paths[0]); ++i) {
+        if (FileExists(paths[i])) {
+            modernFont = LoadFontEx(paths[i], 48, NULL, 0);
+            if (modernFont.texture.id != 0) {
+                modernFontLoaded = 1;
+                SetTextureFilter(modernFont.texture, TEXTURE_FILTER_BILINEAR);
+                break;
+            }
+        }
+    }
+}
+
 static int guiButton(Rectangle r, const char *label) {
     int hover = CheckCollisionPointRec(GetMousePosition(), r);
     DrawRectangleRounded(r, 0.18f, 10,
         hover ? (Color){39, 64, 85, 255} : CARD);
     DrawRectangleRoundedLinesEx(r, 0.18f, 10, 1.0f, TEAL);
-    DrawText(label, (int)r.x + 15, (int)r.y + 14, 18, RAYWHITE);
+    drawModernText(label, (int)r.x + 15, (int)r.y + 14, 18, RAYWHITE);
     return hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 }
 
@@ -379,34 +410,35 @@ static void runGui(void) {
     loadBookings();
     InitWindow(1180, 740, "SmartPark | C17 DAA Platform");
     SetTargetFPS(60);
+    loadModernFont();
     int page = 0, chosen = 0;
     char notice[160] = "Ready. Select a parking location.";
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(NAVY);
         DrawRectangle(0, 0, 225, 740, (Color){17, 28, 46, 255});
-        DrawText("SMARTPARK", 22, 32, 27, TEAL);
-        DrawText("DAA PARKING SYSTEM", 22, 72, 13, MUTED);
+        drawModernText("SMARTPARK", 22, 32, 27, TEAL);
+        drawModernText("DAA PARKING SYSTEM", 22, 72, 13, MUTED);
         if (guiButton((Rectangle){18, 135, 190, 49}, "Dashboard")) page = 0;
         if (guiButton((Rectangle){18, 202, 190, 49}, "Algorithm Lab")) page = 1;
-        DrawText("C17 + raylib", 24, 672, 17, MUTED);
+        drawModernText("C17 + raylib", 24, 672, 17, MUTED);
         if (page == 0) {
             int capacity = 0, occupied = 0;
             for (int i = 0; i < lotCount; ++i) {
                 capacity += lots[i].capacity;
                 occupied += lots[i].occupied;
             }
-            DrawText("Parking Dashboard", 260, 35, 32, RAYWHITE);
-            DrawText("City-wide parking allocation and occupancy", 260, 82, 17, MUTED);
+            drawModernText("Parking Dashboard", 260, 35, 32, RAYWHITE);
+            drawModernText("City-wide parking allocation and occupancy", 260, 82, 17, MUTED);
             const char *titles[] = {"TOTAL", "AVAILABLE", "OCCUPIED"};
             int values[] = {capacity, capacity - occupied, occupied};
             for (int i = 0; i < 3; ++i) {
                 int x = 260 + 300*i;
                 DrawRectangleRounded((Rectangle){(float)x,125,280,100}, .15f, 8, CARD);
-                DrawText(titles[i], x+20, 146, 17, MUTED);
-                DrawText(TextFormat("%d", values[i]), x+20, 177, 32, TEAL);
+                drawModernText(titles[i], x+20, 146, 17, MUTED);
+                drawModernText(TextFormat("%d", values[i]), x+20, 177, 32, TEAL);
             }
-            DrawText("Select parking location", 260, 259, 24, RAYWHITE);
+            drawModernText("Select parking location", 260, 259, 24, RAYWHITE);
             for (int i = 0; i < lotCount && i < 6; ++i) {
                 int x = 260 + (i%3)*300;
                 int y = 310 + (i/3)*145;
@@ -415,10 +447,10 @@ static void runGui(void) {
                 DrawRectangleRounded(r, .14f, 8, i==chosen ?
                     (Color){28, 83, 79, 255} : CARD);
                 if (hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) chosen = i;
-                DrawText(lots[i].name, x+14, y+15, 20, RAYWHITE);
-                DrawText(TextFormat("Free %d / %d", lots[i].capacity-lots[i].occupied,
+                drawModernText(lots[i].name, x+14, y+15, 20, RAYWHITE);
+                drawModernText(TextFormat("Free %d / %d", lots[i].capacity-lots[i].occupied,
                     lots[i].capacity), x+14, y+54, 18, TEAL);
-                DrawText(TextFormat("Rs %d / hour", lots[i].price), x+14, y+86, 16, MUTED);
+                drawModernText(TextFormat("Rs %d / hour", lots[i].price), x+14, y+86, 16, MUTED);
             }
             if (guiButton((Rectangle){260,624,235,52}, "Reserve selected")) {
                 int id = reserve(chosen, 101);
@@ -440,8 +472,8 @@ static void runGui(void) {
                     "Reservation cancelled" : "No active reservation");
             }
         } else {
-            DrawText("DAA Algorithm Laboratory", 260, 35, 31, RAYWHITE);
-            DrawText("Student implementations in algorithms.c", 260, 84, 18, MUTED);
+            drawModernText("DAA Algorithm Laboratory", 260, 35, 31, RAYWHITE);
+            drawModernText("Student implementations in algorithms.c", 260, 84, 18, MUTED);
             if (guiButton((Rectangle){260,160,260,55},"Sort & Search")) {
                 int a[]={8,3,9,1,5,2},tmp[6]; mergeSort(a,tmp,0,5);
                 snprintf(notice,sizeof notice,"Binary search: 5 at index %d",binaryIter(a,6,5));
@@ -463,18 +495,20 @@ static void runGui(void) {
             if (guiButton((Rectangle){830,235,260,55},"Route Benchmark")) {
                 benchmark(); snprintf(notice,sizeof notice,"Benchmark saved to reports/benchmark.csv");
             }
-            DrawText("Routing: Dijkstra vs Bellman-Ford", 260, 370, 24, TEAL);
+            drawModernText("Routing: Dijkstra vs Bellman-Ford", 260, 370, 24, TEAL);
             int a[MAX_NODES],b[MAX_NODES]; dijkstra(0,a); bellmanFord(0,b);
             for (int i=0;i<nodes;++i) {
-                DrawText(TextFormat("Node %d   Dijkstra: %d   Bellman-Ford: %d",i,a[i],b[i]),
+                drawModernText(TextFormat("Node %d   Dijkstra: %d   Bellman-Ford: %d",i,a[i],b[i]),
                     270,420+i*34,18,RAYWHITE);
             }
         }
         DrawRectangle(225, 700, 955, 40, CARD);
-        DrawText(notice, 245, 711, 18, RAYWHITE);
+        drawModernText(notice, 245, 711, 18, RAYWHITE);
         EndDrawing();
     }
-    saveLots(); saveBookings(); CloseWindow();
+    saveLots(); saveBookings();
+    if (modernFontLoaded) UnloadFont(modernFont);
+    CloseWindow();
 }
 #endif
 
