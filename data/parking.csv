@@ -1,0 +1,7 @@
+id,node,capacity,occupied,price,name
+1,0,8,2,25,Clock Tower
+2,1,6,1,35,Rajpur Road
+3,2,10,4,20,ISBT
+4,3,5,0,40,Prem Nagar
+5,4,7,3,30,Ballupur
+6,5,9,1,15,Sahastradhara
