@@ -7,6 +7,7 @@
 #include <string.h>
 #include <limits.h>
 #include <time.h>
+#include <ctype.h>
 
 #define MAX_LOTS 32
 #define MAX_RES 256
@@ -395,6 +396,54 @@ static void loadModernFont(void) {
     }
 }
 
+/* Location name input for nearest-parking search. */
+static char locationInput[48] = "";
+static int locationFocused = 0;
+
+static int sameLocation(const char *input, const char *name) {
+    while (isspace((unsigned char)*input)) ++input;
+    while (*input && *name) {
+        if (tolower((unsigned char)*input) != tolower((unsigned char)*name)) return 0;
+        ++input;
+        ++name;
+    }
+    while (isspace((unsigned char)*input)) ++input;
+    return *input == '\0' && *name == '\0';
+}
+
+static int findLocationNode(const char *input) {
+    for (int i = 0; i < lotCount; ++i) {
+        if (sameLocation(input, lots[i].name)) return lots[i].node;
+    }
+    return -1;
+}
+
+static void drawLocationInput(void) {
+    Rectangle box = {515, 587, 490, 32};
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        locationFocused = CheckCollisionPointRec(GetMousePosition(), box);
+    }
+    if (locationFocused) {
+        int key;
+        while ((key = GetCharPressed()) != 0) {
+            size_t len = strlen(locationInput);
+            if (key >= 32 && key <= 126 && len + 1 < sizeof(locationInput)) {
+                locationInput[len] = (char)key;
+                locationInput[len + 1] = '\0';
+            }
+        }
+        if (IsKeyPressed(KEY_BACKSPACE)) {
+            size_t len = strlen(locationInput);
+            if (len > 0) locationInput[len - 1] = '\0';
+        }
+    }
+    DrawRectangleRounded(box, 0.18f, 8, (Color){31, 48, 69, 255});
+    DrawRectangleRoundedLinesEx(box, 0.18f, 8, 1.2f,
+                                locationFocused ? TEAL : MUTED);
+    drawModernText(locationInput[0] ? locationInput : "Type location: ISBT, Ballupur...",
+                   525, 592, 17, locationInput[0] ? RAYWHITE : MUTED);
+}
+
 static int guiButton(Rectangle r, const char *label) {
     int hover = CheckCollisionPointRec(GetMousePosition(), r);
     DrawRectangleRounded(r, 0.18f, 10,
@@ -457,11 +506,24 @@ static void runGui(void) {
                 if (id < 0) snprintf(notice,sizeof notice,"Reservation failed");
                 else snprintf(notice,sizeof notice,"Reservation created: #%d",id);
             }
-            if (guiButton((Rectangle){515,624,235,52}, "Find nearest")) {
-                int idx = nearest(0,60,0);
-                if (idx >= 0) { chosen = idx;
-                    snprintf(notice,sizeof notice,"Recommended: %s",lots[idx].name);
-                } else snprintf(notice,sizeof notice,"No available parking");
+            drawLocationInput();
+            if (guiButton((Rectangle){515,624,235,52}, "Find nearest") ||
+                (locationFocused && IsKeyPressed(KEY_ENTER))) {
+                int source = findLocationNode(locationInput);
+                if (source < 0) {
+                    snprintf(notice, sizeof notice,
+                             "Unknown location. Try Clock Tower, ISBT, or Ballupur.");
+                } else {
+                    int idx = nearest(source, 60, 0);
+                    if (idx >= 0) {
+                        chosen = idx;
+                        snprintf(notice, sizeof notice, "Nearest to %s: %s",
+                                 locationInput, lots[idx].name);
+                    } else {
+                        snprintf(notice, sizeof notice,
+                                 "No available parking within Rs 60/hour budget.");
+                    }
+                }
             }
             if (guiButton((Rectangle){770,624,235,52}, "Cancel latest")) {
                 int id = -1;
