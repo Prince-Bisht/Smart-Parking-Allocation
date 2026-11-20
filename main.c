@@ -27,23 +27,115 @@ static int lotCount, bookingCount, nextBooking = 1;
 
 static void initialize(void) {
     const Lot initial[] = {
-        {1,0,8,2,25,"Clock Tower"}, {2,1,6,1,35,"Rajpur Road"},
-        {3,2,10,4,20,"ISBT"}, {4,3,5,0,40,"Prem Nagar"},
-        {5,4,7,3,30,"Ballupur"}, {6,5,9,1,15,"Sahastradhara"}
+        {1,0,30,8,25,"Prem Nagar"},
+        {2,1,35,12,30,"Clock Tower"},
+        {3,2,40,15,20,"ISBT"},
+        {4,3,25,7,25,"Raipur"},
+        {5,4,45,20,35,"Mall of Dehradun"}
     };
-    const int edges[][3] = {
-        {0,1,4}, {0,2,7}, {0,4,3}, {1,3,5}, {1,5,8},
-        {2,3,4}, {2,4,2}, {3,5,3}, {4,5,6}
-    };
-    memcpy(lots, initial, sizeof(initial));
-    lotCount = (int)(sizeof(initial) / sizeof(initial[0]));
-    for (int i = 0; i < MAX_NODES; ++i)
-        for (int j = 0; j < MAX_NODES; ++j)
-            graph[i][j] = (i == j) ? 0 : INF;
-    for (size_t i = 0; i < sizeof(edges)/sizeof(edges[0]); ++i) {
-        int u = edges[i][0], v = edges[i][1], w = edges[i][2];
-        graph[u][v] = graph[v][u] = w;
+    memcpy(lots, initial, sizeof initial);
+    lotCount = 5;
+    nodes = 5;
+    for (int i=0; i<MAX_NODES; ++i)
+        for (int j=0; j<MAX_NODES; ++j)
+            graph[i][j] = i==j ? 0 : INF;
+}
+
+#define SMALL_COUNT 14
+static const char *smallNames[SMALL_COUNT] = {
+    "Nanda Ki Chowki", "IMA", "FRI", "Kandoli", "Bidholi",
+    "Ballupur", "Balliwala", "Prince Chowk", "Dharampur",
+    "Rispana", "Jogiwala", "Miyawala", "Mokhampur", "Cargi Chowk"
+};
+/* Estimated driving distances, in tenths of a kilometre.
+   Simulation data; not a fully Google Maps-verified dataset. */
+static int smallKm10[SMALL_COUNT][5];
+
+static void loadDistances(void) {
+    FILE *f = fopen("data/distances.csv", "r");
+    if (!f) {
+        fprintf(stderr, "Missing data/distances.csv: location search unavailable\n");
+        return;
     }
+    char line[256];
+    if (!fgets(line, sizeof line, f)) { fclose(f); return; }
+    int seen[SMALL_COUNT] = {0};
+    while (fgets(line, sizeof line, f)) {
+        char name[64]; double d[5];
+        if (sscanf(line, "%63[^,],%lf,%lf,%lf,%lf,%lf",
+                   name,&d[0],&d[1],&d[2],&d[3],&d[4]) != 6) continue;
+        for (int i=0;i<SMALL_COUNT;i++) {
+            if (strcmp(name,smallNames[i]) != 0) continue;
+            for (int j=0;j<5;j++)
+                smallKm10[i][j] = d[j] >= 0 && d[j] < 10000 ?
+                    (int)(d[j]*10.0+0.5) : INF;
+            seen[i] = 1;
+        }
+    }
+    fclose(f);
+    /* Infer main-node connections via shared smaller locations.
+       These are modelled estimates, not surveyed roads. */
+    for (int i=0;i<5;i++) for(int j=i+1;j<5;j++) {
+        int best=INF;
+        for (int k=0;k<SMALL_COUNT;k++) if(seen[k] &&
+            smallKm10[k][i]<INF && smallKm10[k][j]<INF &&
+            smallKm10[k][i]+smallKm10[k][j]<best)
+            best=smallKm10[k][i]+smallKm10[k][j];
+        graph[i][j]=graph[j][i]=best;
+    }
+}
+
+static int sameLocation(const char *input, const char *name) {
+    while (isspace((unsigned char)*input)) ++input;
+    while (*input && *name) {
+        if (tolower((unsigned char)*input) != tolower((unsigned char)*name)) return 0;
+        ++input;
+        ++name;
+    }
+    while (isspace((unsigned char)*input)) ++input;
+    return *input == '\0' && *name == '\0';
+}
+
+static int locationIndex(const char *name) {
+    for(int i=0;i<SMALL_COUNT;i++) if(sameLocation(name,smallNames[i])) return i;
+    for(int i=0;i<lotCount;i++) if(sameLocation(name,lots[i].name)) return -lots[i].node-1;
+    /* common spelling aliases */
+    if(sameLocation(name,"Miawala")) return 11;
+    if(sameLocation(name,"Mokahmpur")) return 12;
+    if(sameLocation(name,"Dahrampur")) return 8;
+    if(sameLocation(name,"Cargi")) return 13;
+    if(sameLocation(name,"Premnagar")) return -1;
+    return -100;
+}
+static int nearestFromName(const char *name,int budget,int *distance10) {
+    int k=locationIndex(name);
+    if(k==-100) return -2;
+    int best=-1,bestDistance=INF;
+    if(k>=0) {
+        for(int i=0;i<lotCount;i++) {
+            int distance=smallKm10[k][lots[i].node];
+            if(lots[i].occupied>=lots[i].capacity ||
+               lots[i].price>budget || distance>=INF) continue;
+            if(best<0 || distance<bestDistance ||
+               (distance==bestDistance && lots[i].price<lots[best].price)) {
+                best=i;bestDistance=distance;
+            }
+        }
+    } else {
+        int node=-k-1,dist[MAX_NODES];
+        dijkstra(node,dist);
+        for(int i=0;i<lotCount;i++) {
+            int distance=dist[lots[i].node];
+            if(lots[i].occupied>=lots[i].capacity ||
+               lots[i].price>budget || distance>=INF) continue;
+            if(best<0 || distance<bestDistance ||
+               (distance==bestDistance && lots[i].price<lots[best].price)) {
+                best=i;bestDistance=distance;
+            }
+        }
+    }
+    if(distance10) *distance10=bestDistance;
+    return best;
 }
 
 static int loadLots(void) {
@@ -115,20 +207,6 @@ static void loadBookings(void) {
     fclose(f);
 }
 
-static int nearest(int source, int budget, int useBellman) {
-    int dist[MAX_NODES];
-    if (useBellman) bellmanFord(source, dist);
-    else dijkstra(source, dist);
-    int best = -1;
-    for (int i = 0; i < lotCount; ++i) {
-        if (lots[i].occupied >= lots[i].capacity ||
-            lots[i].price > budget || dist[lots[i].node] == INF) continue;
-        if (best < 0 || dist[lots[i].node] < dist[lots[best].node] ||
-            (dist[lots[i].node] == dist[lots[best].node] &&
-             lots[i].price < lots[best].price)) best = i;
-    }
-    return best;
-}
 
 static int reserve(int idx, int driver) {
     if (idx < 0 || idx >= lotCount || driver <= 0 ||
@@ -296,6 +374,7 @@ static void routeReport(void) {
 
 static int runCli(void) {
     initialize();
+    loadDistances();
     loadLots();
     loadBookings();
     for (;;) {
@@ -320,16 +399,18 @@ static int runCli(void) {
         if (choice == 0) break;
         if (choice == 1) viewLots();
         else if (choice == 2) {
-            int source, budget;
-            if (!readInt("Driver node (0-5): ", &source) ||
-                !readInt("Max price per hour: ", &budget) ||
-                source < 0 || source >= nodes || budget < 0) {
-                puts("Invalid input."); continue;
+            char location[80]; int budget, distance10=INF;
+            printf("Location name: ");
+            if(!fgets(location,sizeof location,stdin)) break;
+            location[strcspn(location,"\r\n")]=0;
+            if(!readInt("Max price per hour: ",&budget) || budget<0) {
+                puts("Invalid budget."); continue;
             }
-            int idx = nearest(source, budget, 0);
-            if (idx < 0) puts("No feasible parking found.");
-            else printf("Recommended: %s (ID %d, Rs %d/hr)\n",
-                        lots[idx].name, lots[idx].id, lots[idx].price);
+            int idx=nearestFromName(location,budget,&distance10);
+            if(idx==-2) puts("Unknown location. Check data/distances.csv.");
+            else if(idx<0) puts("No available parking within budget.");
+            else printf("Recommended: %s (ID %d, %.1f km, Rs %d/hr)\n",
+                        lots[idx].name,lots[idx].id,distance10/10.0,lots[idx].price);
         } else if (choice == 3) {
             int id, driver, idx = -1;
             viewLots();
@@ -400,23 +481,7 @@ static void loadModernFont(void) {
 static char locationInput[48] = "";
 static int locationFocused = 0;
 
-static int sameLocation(const char *input, const char *name) {
-    while (isspace((unsigned char)*input)) ++input;
-    while (*input && *name) {
-        if (tolower((unsigned char)*input) != tolower((unsigned char)*name)) return 0;
-        ++input;
-        ++name;
-    }
-    while (isspace((unsigned char)*input)) ++input;
-    return *input == '\0' && *name == '\0';
-}
 
-static int findLocationNode(const char *input) {
-    for (int i = 0; i < lotCount; ++i) {
-        if (sameLocation(input, lots[i].name)) return lots[i].node;
-    }
-    return -1;
-}
 
 static void drawLocationInput(void) {
     Rectangle box = {515, 587, 490, 32};
@@ -455,6 +520,7 @@ static int guiButton(Rectangle r, const char *label) {
 
 static void runGui(void) {
     initialize();
+    loadDistances();
     loadLots();
     loadBookings();
     InitWindow(1180, 740, "SmartPark | C17 DAA Platform");
@@ -509,20 +575,16 @@ static void runGui(void) {
             drawLocationInput();
             if (guiButton((Rectangle){515,624,235,52}, "Find nearest") ||
                 (locationFocused && IsKeyPressed(KEY_ENTER))) {
-                int source = findLocationNode(locationInput);
-                if (source < 0) {
-                    snprintf(notice, sizeof notice,
-                             "Unknown location. Try Clock Tower, ISBT, or Ballupur.");
+                int distance10=INF;
+                int idx=nearestFromName(locationInput,60,&distance10);
+                if(idx==-2) {
+                    snprintf(notice,sizeof notice,"Unknown location. Try Miyawala or Ballupur.");
+                } else if(idx<0) {
+                    snprintf(notice,sizeof notice,"No available parking within Rs 60/hour.");
                 } else {
-                    int idx = nearest(source, 60, 0);
-                    if (idx >= 0) {
-                        chosen = idx;
-                        snprintf(notice, sizeof notice, "Nearest to %s: %s",
-                                 locationInput, lots[idx].name);
-                    } else {
-                        snprintf(notice, sizeof notice,
-                                 "No available parking within Rs 60/hour budget.");
-                    }
+                    chosen=idx;
+                    snprintf(notice,sizeof notice,"Nearest to %s: %s (%.1f km)",
+                             locationInput,lots[idx].name,distance10/10.0);
                 }
             }
             if (guiButton((Rectangle){770,624,235,52}, "Cancel latest")) {

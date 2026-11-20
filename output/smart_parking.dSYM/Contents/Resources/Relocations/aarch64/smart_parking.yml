@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/ltprincebisht/Desktop/Projects/Smart_Parking_Allocation/output/smart_parking'
+relocations:     []
+...

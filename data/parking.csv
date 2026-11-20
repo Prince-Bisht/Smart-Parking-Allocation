@@ -1,7 +1,6 @@
 id,node,capacity,occupied,price,name
-1,0,8,2,25,Clock Tower
-2,1,6,1,35,Rajpur Road
-3,2,10,4,20,ISBT
-4,3,5,0,40,Prem Nagar
-5,4,7,3,30,Ballupur
-6,5,9,1,15,Sahastradhara
+1,0,30,6,25,Prem Nagar
+2,1,35,11,30,Clock Tower
+3,2,40,15,20,ISBT
+4,3,25,7,25,Raipur
+5,4,45,20,35,Mall of Dehradun
