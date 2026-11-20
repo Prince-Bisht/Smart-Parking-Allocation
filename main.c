@@ -138,6 +138,97 @@ static int nearestFromName(const char *name,int budget,int *distance10) {
     return best;
 }
 
+/* Illustrative road-corridor graph. Weights are approximate simulation
+   values, NOT verified road segments. The 70-pair CSV remains used for
+   nearest-parking recommendations; this separate graph displays waypoints. */
+#define ROUTE_NODES (5 + SMALL_COUNT)
+static int routeWeight[ROUTE_NODES][ROUTE_NODES];
+static const char *routeName(int id) {
+    return id < 5 ? lots[id].name : smallNames[id - 5];
+}
+static void routeEdge(int u, int v, int tenthsKm) {
+    if (u >= 0 && v >= 0 && u < ROUTE_NODES && v < ROUTE_NODES &&
+        tenthsKm > 0 && tenthsKm < routeWeight[u][v])
+        routeWeight[u][v] = routeWeight[v][u] = tenthsKm;
+}
+static void makeRouteGraph(void) {
+    for (int i = 0; i < ROUTE_NODES; ++i)
+        for (int j = 0; j < ROUTE_NODES; ++j)
+            routeWeight[i][j] = i == j ? 0 : INF;
+
+    /* IDs 0..4: main parking; IDs 5..18: smallNames in listed order.
+       Road corridors are deliberately modelled as consecutive waypoints. */
+    const int corridors[][3] = {
+        {11+5,12+5,15}, /* Miyawala -> Mokhampur */
+        {12+5,10+5,20}, /* Mokhampur -> Jogiwala */
+        {10+5, 9+5,18}, /* Jogiwala -> Rispana */
+        { 9+5, 8+5,20}, /* Rispana -> Dharampur */
+        { 8+5, 7+5,24}, /* Dharampur -> Prince Chowk */
+        { 7+5, 6+5,23}, /* Prince Chowk -> Balliwala */
+        { 6+5, 5+5,12}, /* Balliwala -> Ballupur */
+        { 5+5, 2+5,20}, /* Ballupur -> FRI */
+        { 2+5, 1+5,30}, /* FRI -> IMA */
+        { 1+5, 0+5,20}, /* IMA -> Nanda Ki Chowki */
+        { 0+5, 4+5,70}, /* Nanda Ki Chowki -> Bidholi */
+        { 4+5, 3+5,40}, /* Bidholi -> Kandoli */
+        { 7+5,13+5,38}, /* Prince Chowk -> Cargi Chowk */
+        {13+5, 6+5,30}, /* Cargi Chowk -> Balliwala */
+        { 0, 0+5,24}, /* Prem Nagar -> Nanda Ki Chowki */
+        { 0, 1+5,22}, /* Prem Nagar -> IMA */
+        { 1, 7+5,12}, /* Clock Tower -> Prince Chowk */
+        { 1, 8+5,42}, /* Clock Tower -> Dharampur */
+        { 2,13+5,20}, /* ISBT -> Cargi Chowk */
+        { 2, 6+5,63}, /* ISBT -> Balliwala */
+        { 3,10+5,60}, /* Raipur -> Jogiwala */
+        { 3,11+5,53}, /* Raipur -> Miyawala */
+        { 4,11+5,16}, /* Mall -> Miyawala */
+        { 4,12+5,10}  /* Mall -> Mokhampur */
+    };
+    for (size_t i = 0; i < sizeof corridors / sizeof corridors[0]; ++i)
+        routeEdge(corridors[i][0], corridors[i][1], corridors[i][2]);
+}
+static int routeIdFromName(const char *name) {
+    int k = locationIndex(name);
+    if (k == -100) return -1;
+    return k >= 0 ? k + 5 : -k - 1;
+}
+/* Returns total tenths of km; -1 means unknown/unreachable.
+   Caller supplies an array of ROUTE_NODES and receives ordered IDs. */
+static int routeBetween(int start, int end, int path[ROUTE_NODES], int *length) {
+    int dist[ROUTE_NODES], parent[ROUTE_NODES], used[ROUTE_NODES] = {0};
+    *length = 0;
+    if (start < 0 || end < 0 || start >= ROUTE_NODES || end >= ROUTE_NODES)
+        return -1;
+    for (int i=0; i<ROUTE_NODES; ++i) {
+        dist[i] = INF;
+        parent[i] = -1;
+    }
+    dist[start] = 0;
+    for (int step=0; step<ROUTE_NODES; ++step) {
+        int u = -1;
+        for (int i=0; i<ROUTE_NODES; ++i)
+            if (!used[i] && (u < 0 || dist[i] < dist[u])) u = i;
+        if (u < 0 || dist[u] == INF || u == end) break;
+        used[u] = 1;
+        for (int v=0; v<ROUTE_NODES; ++v)
+            if (!used[v] && routeWeight[u][v] < INF &&
+                dist[u] + routeWeight[u][v] < dist[v]) {
+                dist[v] = dist[u] + routeWeight[u][v];
+                parent[v] = u;
+            }
+    }
+    if (dist[end] == INF) return -1;
+    int reversed[ROUTE_NODES], n = 0;
+    for (int v=end; v!=-1 && n<ROUTE_NODES; v=parent[v]) {
+        reversed[n++] = v;
+        if (v == start) break;
+    }
+    if (!n || reversed[n-1] != start) return -1;
+    for (int i=0; i<n; ++i) path[i] = reversed[n-1-i];
+    *length = n;
+    return dist[end];
+}
+
 static int loadLots(void) {
     FILE *f = fopen("data/parking.csv", "r");
     if (!f) return 0;
@@ -376,6 +467,7 @@ static int runCli(void) {
     initialize();
     loadDistances();
     loadLots();
+    makeRouteGraph();
     loadBookings();
     for (;;) {
         int choice;
@@ -391,6 +483,7 @@ static int runCli(void) {
         puts("7. Compare shortest routes");
         puts("8. DAA algorithm demonstrations");
         puts("9. Run routing benchmark (CSV)");
+        puts("10. Show route between locations");
         puts("0. Exit");
         if (!readInt("Enter choice: ", &choice)) {
             puts("Invalid input or end of input. Exiting.");
@@ -432,6 +525,22 @@ static int runCli(void) {
         else if (choice == 7) routeReport();
         else if (choice == 8) runWorkbench();
         else if (choice == 9) benchmark();
+        else if (choice == 10) {
+            char from[80], to[80]; int path[ROUTE_NODES], count=0;
+            printf("From: ");
+            if (!fgets(from,sizeof from,stdin)) break;
+            from[strcspn(from,"\r\n")]=0;
+            printf("To: ");
+            if (!fgets(to,sizeof to,stdin)) break;
+            to[strcspn(to,"\r\n")]=0;
+            int distance=routeBetween(routeIdFromName(from),routeIdFromName(to),path,&count);
+            if (distance<0) puts("Unknown or unreachable location.");
+            else {
+                printf("Modelled route (%.1f km): ",distance/10.0);
+                for(int i=0;i<count;i++) printf("%s%s",i?" -> ":"",routeName(path[i]));
+                puts("\nNote: simulated graph route, not actual road directions.");
+            }
+        }
         else puts("Unknown menu choice.");
     }
     saveLots();
@@ -509,6 +618,91 @@ static void drawLocationInput(void) {
                    525, 592, 17, locationInput[0] ? RAYWHITE : MUTED);
 }
 
+static int guiButton(Rectangle r, const char *label);
+static char destinationInput[48] = "Dharampur";
+static int destinationFocused = 0;
+static int shownPath[ROUTE_NODES], shownLength = 0, shownDistance = -1;
+static char shownFrom[48] = "", shownTo[48] = "";
+
+static void textField(Rectangle box, char *buffer, size_t capacity, int *focused,
+                      const char *placeholder) {
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+        *focused = CheckCollisionPointRec(GetMousePosition(), box);
+    if (*focused) {
+        int key;
+        while ((key = GetCharPressed()) != 0) {
+            size_t len = strlen(buffer);
+            if (key >= 32 && key <= 126 && len + 1 < capacity) {
+                buffer[len] = (char)key;
+                buffer[len+1] = '\0';
+            }
+        }
+        if (IsKeyPressed(KEY_BACKSPACE)) {
+            size_t len = strlen(buffer);
+            if (len) buffer[len-1] = '\0';
+        }
+    }
+    DrawRectangleRounded(box, 0.16f, 8, (Color){31,48,69,255});
+    DrawRectangleRoundedLinesEx(box, 0.16f, 8, 1.2f, *focused ? TEAL : MUTED);
+    drawModernText(buffer[0] ? buffer : placeholder,
+                   (int)box.x+10, (int)box.y+9, 17,
+                   buffer[0] ? RAYWHITE : MUTED);
+}
+static void calculateShownRoute(const char *from, const char *to) {
+    snprintf(shownFrom, sizeof shownFrom, "%s", from);
+    snprintf(shownTo, sizeof shownTo, "%s", to);
+    shownDistance = routeBetween(routeIdFromName(from), routeIdFromName(to),
+                                 shownPath, &shownLength);
+}
+static void routePage(void) {
+    drawModernText("Route Navigation", 260, 35, 31, RAYWHITE);
+    drawModernText("Modelled route through registered locations", 260, 82, 17, MUTED);
+    drawModernText("From", 260, 140, 18, RAYWHITE);
+    textField((Rectangle){345,132,350,43}, locationInput,
+              sizeof locationInput, &locationFocused, "Starting location");
+    drawModernText("To", 260, 197, 18, RAYWHITE);
+    textField((Rectangle){345,189,350,43}, destinationInput,
+              sizeof destinationInput, &destinationFocused, "Destination");
+    if (guiButton((Rectangle){730,151,240,53}, "Show route") ||
+        ((locationFocused || destinationFocused) && IsKeyPressed(KEY_ENTER))) {
+        calculateShownRoute(locationInput, destinationInput);
+    }
+    DrawRectangleRounded((Rectangle){260,265,850,405},0.05f,8,CARD);
+    if (shownDistance < 0) {
+        drawModernText("Enter two registered locations and select Show route.",
+                       283,291,18,MUTED);
+    } else {
+        drawModernText(TextFormat("Estimated graph distance: %.1f km",shownDistance/10.0),
+                       283,290,22,TEAL);
+        /* Arrow-connected route chips, wrapping into additional rows. */
+        int x = 284, y = 347;
+        for (int i = 0; i < shownLength; ++i) {
+            const char *name = routeName(shownPath[i]);
+            int chipWidth = MeasureText(name, 18) + 34;
+            if (modernFontLoaded)
+                chipWidth = (int)MeasureTextEx(modernFont, name, 18, 1).x + 34;
+            if (x + chipWidth > 1085) { x = 284; y += 68; }
+            if (y > 600) {
+                drawModernText("Additional waypoints omitted from display", 290, 628, 15, MUTED);
+                break;
+            }
+            Rectangle chip = {(float)x, (float)y, (float)chipWidth, 43};
+            DrawRectangleRounded(chip, 0.18f, 8,
+                i == 0 || i == shownLength - 1 ?
+                (Color){24,80,76,255} : (Color){35,54,76,255});
+            drawModernText(name, x + 17, y + 12, 18, RAYWHITE);
+            x += chipWidth + 8;
+            if (i + 1 < shownLength) {
+                if (x + 31 > 1085) { x = 284; y += 68; }
+                drawModernText("->", x, y + 11, 18, TEAL);
+                x += 35;
+            }
+        }
+    }
+    drawModernText("Approximate waypoint simulation - not verified road directions.",
+                   265,680,15,MUTED);
+}
+
 static int guiButton(Rectangle r, const char *label) {
     int hover = CheckCollisionPointRec(GetMousePosition(), r);
     DrawRectangleRounded(r, 0.18f, 10,
@@ -522,6 +716,7 @@ static void runGui(void) {
     initialize();
     loadDistances();
     loadLots();
+    makeRouteGraph();
     loadBookings();
     InitWindow(1180, 740, "SmartPark | C17 DAA Platform");
     SetTargetFPS(60);
@@ -536,6 +731,7 @@ static void runGui(void) {
         drawModernText("DAA PARKING SYSTEM", 22, 72, 13, MUTED);
         if (guiButton((Rectangle){18, 135, 190, 49}, "Dashboard")) page = 0;
         if (guiButton((Rectangle){18, 202, 190, 49}, "Algorithm Lab")) page = 1;
+        if (guiButton((Rectangle){18, 269, 190, 49}, "Route Navigation")) page = 2;
         drawModernText("C17 + raylib", 24, 672, 17, MUTED);
         if (page == 0) {
             int capacity = 0, occupied = 0;
@@ -583,6 +779,8 @@ static void runGui(void) {
                     snprintf(notice,sizeof notice,"No available parking within Rs 60/hour.");
                 } else {
                     chosen=idx;
+                    calculateShownRoute(locationInput,lots[idx].name);
+                    page=2;
                     snprintf(notice,sizeof notice,"Nearest to %s: %s (%.1f km)",
                              locationInput,lots[idx].name,distance10/10.0);
                 }
@@ -595,6 +793,8 @@ static void runGui(void) {
                 snprintf(notice,sizeof notice, "%s", id>=0 && cancel(id) ?
                     "Reservation cancelled" : "No active reservation");
             }
+        } else if (page == 2) {
+            routePage();
         } else {
             drawModernText("DAA Algorithm Laboratory", 260, 35, 31, RAYWHITE);
             drawModernText("Student implementations in algorithms.c", 260, 84, 18, MUTED);
