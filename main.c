@@ -589,6 +589,33 @@ static void loadModernFont(void) {
 /* Location name input for nearest-parking search. */
 static char locationInput[48] = "";
 static int locationFocused = 0;
+static char budgetInput[12] = "60";
+static int budgetFocused = 0;
+
+static void drawBudgetInput(void) {
+    Rectangle box = {260, 587, 235, 32};
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+        budgetFocused = CheckCollisionPointRec(GetMousePosition(), box);
+    if (budgetFocused) {
+        int key;
+        while ((key = GetCharPressed()) != 0) {
+            size_t len = strlen(budgetInput);
+            if (key >= '0' && key <= '9' && len + 1 < sizeof budgetInput) {
+                budgetInput[len] = (char)key;
+                budgetInput[len + 1] = '\0';
+            }
+        }
+        if (IsKeyPressed(KEY_BACKSPACE)) {
+            size_t len = strlen(budgetInput);
+            if (len) budgetInput[len - 1] = '\0';
+        }
+    }
+    DrawRectangleRounded(box, 0.18f, 8, (Color){31,48,69,255});
+    DrawRectangleRoundedLinesEx(box, 0.18f, 8, 1.2f,
+                                budgetFocused ? TEAL : MUTED);
+    drawModernText(TextFormat("Budget Rs/hr: %s", budgetInput[0] ? budgetInput : "(enter amount)"),
+                   270, 592, 17, budgetInput[0] ? RAYWHITE : MUTED);
+}
 
 
 
@@ -768,21 +795,29 @@ static void runGui(void) {
                 if (id < 0) snprintf(notice,sizeof notice,"Reservation failed");
                 else snprintf(notice,sizeof notice,"Reservation created: #%d",id);
             }
+            drawBudgetInput();
             drawLocationInput();
             if (guiButton((Rectangle){515,624,235,52}, "Find nearest") ||
-                (locationFocused && IsKeyPressed(KEY_ENTER))) {
+                ((locationFocused || budgetFocused) && IsKeyPressed(KEY_ENTER))) {
+                char *endptr;
+                long enteredBudget = strtol(budgetInput, &endptr, 10);
+                if (!budgetInput[0] || *endptr != '\0' ||
+                    enteredBudget < 0 || enteredBudget > 1000000) {
+                    snprintf(notice, sizeof notice, "Enter a valid budget (0 to 1000000 Rs/hr).");
+                } else {
                 int distance10=INF;
-                int idx=nearestFromName(locationInput,60,&distance10);
+                int idx=nearestFromName(locationInput,(int)enteredBudget,&distance10);
                 if(idx==-2) {
                     snprintf(notice,sizeof notice,"Unknown location. Try Miyawala or Ballupur.");
                 } else if(idx<0) {
-                    snprintf(notice,sizeof notice,"No available parking within Rs 60/hour.");
+                    snprintf(notice,sizeof notice,"No available parking within Rs %ld/hour.", enteredBudget);
                 } else {
                     chosen=idx;
                     calculateShownRoute(locationInput,lots[idx].name);
                     page=2;
                     snprintf(notice,sizeof notice,"Nearest to %s: %s (%.1f km)",
                              locationInput,lots[idx].name,distance10/10.0);
+                }
                 }
             }
             if (guiButton((Rectangle){770,624,235,52}, "Cancel latest")) {
