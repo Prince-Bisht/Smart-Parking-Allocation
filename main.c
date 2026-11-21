@@ -757,8 +757,7 @@ static void runGui(void) {
         drawModernText("SMARTPARK", 22, 32, 27, TEAL);
         drawModernText("DAA PARKING SYSTEM", 22, 72, 13, MUTED);
         if (guiButton((Rectangle){18, 135, 190, 49}, "Dashboard")) page = 0;
-        if (guiButton((Rectangle){18, 202, 190, 49}, "Algorithm Lab")) page = 1;
-        if (guiButton((Rectangle){18, 269, 190, 49}, "Route Navigation")) page = 2;
+        if (guiButton((Rectangle){18, 202, 190, 49}, "Route Navigation")) page = 2;
         drawModernText("C17 + raylib", 24, 672, 17, MUTED);
         if (page == 0) {
             int capacity = 0, occupied = 0;
@@ -830,36 +829,6 @@ static void runGui(void) {
             }
         } else if (page == 2) {
             routePage();
-        } else {
-            drawModernText("DAA Algorithm Laboratory", 260, 35, 31, RAYWHITE);
-            drawModernText("Student implementations in algorithms.c", 260, 84, 18, MUTED);
-            if (guiButton((Rectangle){260,160,260,55},"Sort & Search")) {
-                int a[]={8,3,9,1,5,2},tmp[6]; mergeSort(a,tmp,0,5);
-                snprintf(notice,sizeof notice,"Binary search: 5 at index %d",binaryIter(a,6,5));
-            }
-            if (guiButton((Rectangle){545,160,260,55},"Maximum Subarray")) {
-                int a[]={-2,3,-1,5,-4};
-                snprintf(notice,sizeof notice,"Max subarray sum: %d",maxSubarray(a,5));
-            }
-            if (guiButton((Rectangle){830,160,260,55},"0/1 Knapsack")) {
-                int w[]={2,3,4},v[]={4,5,7};
-                snprintf(notice,sizeof notice,"Knapsack optimum: %d",knapsack01(w,v,3,5));
-            }
-            if (guiButton((Rectangle){260,235,260,55},"LCS")) {
-                snprintf(notice,sizeof notice,"LCS length: %d",lcs("PARKING","KING"));
-            }
-            if (guiButton((Rectangle){545,235,260,55},"KMP Search")) {
-                snprintf(notice,sizeof notice,"KMP index: %d",kmpMatch("parking reservation","reservation"));
-            }
-            if (guiButton((Rectangle){830,235,260,55},"Route Benchmark")) {
-                benchmark(); snprintf(notice,sizeof notice,"Benchmark saved to reports/benchmark.csv");
-            }
-            drawModernText("Routing: Dijkstra vs Bellman-Ford", 260, 370, 24, TEAL);
-            int a[MAX_NODES],b[MAX_NODES]; dijkstra(0,a); bellmanFord(0,b);
-            for (int i=0;i<nodes;++i) {
-                drawModernText(TextFormat("Node %d   Dijkstra: %d   Bellman-Ford: %d",i,a[i],b[i]),
-                    270,420+i*34,18,RAYWHITE);
-            }
         }
         DrawRectangle(225, 700, 955, 40, CARD);
         drawModernText(notice, 245, 711, 18, RAYWHITE);
